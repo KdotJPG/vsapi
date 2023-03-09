@@ -125,6 +125,7 @@ namespace Vintagestory.API.MathTools
         public struct ColumnNoise
         {
             OctaveEntry[] orderedOctaveEntries;
+            PastEvaluation[] pastEvaluations;
 
             public double UncurvedBound { get; private set; }
             public double BoundMin { get; private set; }
@@ -134,6 +135,11 @@ namespace Vintagestory.API.MathTools
             {
                 public long Seed;
                 public double X, FrequencyY, Z, Amplitude, Threshold, StopBound;
+            }
+
+            struct PastEvaluation
+            {
+                public double Value, Y;
             }
 
             public ColumnNoise(NewNormalizedSimplexFractalNoise terrainNoise, double relativeYFrequency, double[] amplitudes, double[] thresholds, double noiseX, double noiseZ)
@@ -171,6 +177,7 @@ namespace Vintagestory.API.MathTools
 
                 // Fill out noise generators in order
                 this.orderedOctaveEntries = new OctaveEntry[nUsedOctaves];
+                this.pastEvaluations = new PastEvaluation[nUsedOctaves];
                 double uncertaintySum = 0;
                 for (int j = nUsedOctaves - 1; j >= 0; j--)
                 {
@@ -187,6 +194,10 @@ namespace Vintagestory.API.MathTools
                         Threshold = thresholds[i] * (ValueMultiplier * ThresholdRescaleOldToNew),
                         StopBound = uncertaintySum
                     };
+                    pastEvaluations[j] = new PastEvaluation
+                    {
+                        Y = double.NaN
+                    };
                 }
             }
 
@@ -194,6 +205,28 @@ namespace Vintagestory.API.MathTools
             public double NoiseSign(double y, double inverseCurvedThresholder)
             {
                 double value = inverseCurvedThresholder;
+
+                const double maxYSlope = NewSimplexNoiseLayer.MaxYSlope_ImprovedXZ;
+                double valueTempMin = inverseCurvedThresholder;
+                double valueTempMax = inverseCurvedThresholder;
+                for (int j = 0; j < orderedOctaveEntries.Length; j++)
+                {
+                    ref readonly OctaveEntry octaveEntry = ref orderedOctaveEntries[j];
+
+                    // Exit if we couldn't possibly trigger an early return within this loop.
+                    if (!(valueTempMax <= 0) && !(valueTempMin >= 0)) break;
+
+                    // Stop if no further noise calculation is necessary to know the sign of the result.
+                    if (valueTempMin >= octaveEntry.StopBound) return valueTempMin;
+                    if (valueTempMax <= -octaveEntry.StopBound) return valueTempMax;
+
+                    // Extrapolate most-recently calculated noise values for each octave.
+                    double evalY = y * octaveEntry.FrequencyY;
+                    double deltaY = Math.Abs(pastEvaluations[j].Y - evalY);
+                    valueTempMin += ApplyThresholding(Math.Max(-1, pastEvaluations[j].Value - deltaY * maxYSlope) * octaveEntry.Amplitude, octaveEntry.Threshold);
+                    valueTempMax += ApplyThresholding(Math.Min( 1, pastEvaluations[j].Value + deltaY * maxYSlope) * octaveEntry.Amplitude, octaveEntry.Threshold);
+                }
+
                 for (int j = 0; j < orderedOctaveEntries.Length; j++)
                 {
                     ref readonly OctaveEntry octaveEntry = ref orderedOctaveEntries[j];
@@ -201,10 +234,14 @@ namespace Vintagestory.API.MathTools
                     // Stop if no further noise calculation is necessary to know the sign of the result.
                     if (value >= octaveEntry.StopBound || value <= -octaveEntry.StopBound) break;
 
-                    // Multiplication by VALUE_MULTIPLIER is baked into .Amplitude and .Threshold
-                    double noiseValue = NewSimplexNoiseLayer.Evaluate_ImprovedXZ(octaveEntry.Seed, octaveEntry.X, y * octaveEntry.FrequencyY, octaveEntry.Z) * octaveEntry.Amplitude;
-                    value += ApplyThresholding(noiseValue, octaveEntry.Threshold);
+                    // Multiplication by ValueMultiplier is baked into .Amplitude and .Threshold
+                    double evalY = y * octaveEntry.FrequencyY;
+                    double noiseValue = NewSimplexNoiseLayer.Evaluate_ImprovedXZ(octaveEntry.Seed, octaveEntry.X, evalY, octaveEntry.Z);
+                    pastEvaluations[j].Value = noiseValue;
+                    pastEvaluations[j].Y = evalY;
+                    value += ApplyThresholding(noiseValue * octaveEntry.Amplitude, octaveEntry.Threshold);
                 }
+
                 return value;
             }
 

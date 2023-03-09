@@ -5,6 +5,7 @@ namespace Vintagestory.API.MathTools
     public static class NewSimplexNoiseLayer
     {
         public const double OldToNewFrequency = 0.6123724356957945;
+        public const double MaxYSlope_ImprovedXZ = 5.0; // Not accurate, but if it exceeds this then it's very rare.
 
         private const long PrimeX = 0x5205402B9270C86FL;
         private const long PrimeY = 0x598CD327003817B5L;

@@ -144,8 +144,8 @@ namespace Vintagestory.API.Datastructures
             {
                 // all other cases, we need to unwrap it into the new array
                 lengthToCopy -= head;
-                ArrayCopy(array, head, newArray, 0, lengthToCopy);
-                ArrayCopy(array, 0, newArray, lengthToCopy, head);
+                ArrayCopy(array, head, newArray, 0, lengthToCopy);  // Begin at head and copy to the end of the array
+                ArrayCopy(array, 0, newArray, lengthToCopy, head);  // Begin at the start of the array and copy to head
             }
             array = newArray;
             head = 0;
